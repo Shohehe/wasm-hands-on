@@ -1,0 +1,25 @@
+spin_manifest_version = 2
+
+[application]
+name = "order-service"
+version = "0.1.0"
+
+[variables]
+customer_service_url = { default = "http://localhost:3001" }
+db_url = { required = true }
+
+[[trigger.http]]
+route = "/..."
+component = "order-service"
+
+[component.order-service]
+source = "target/wasm32-wasip1/release/order_service.wasm"
+allowed_outbound_hosts = ["http://*:*", "postgres://postgres.db.svc.cluster.local:5432"]
+
+[component.order-service.build]
+command = "cargo build --target wasm32-wasip1 --release"
+watch = ["src/**/*.rs", "Cargo.toml"]
+
+[component.order-service.variables]
+customer_service_url = "{{ customer_service_url }}"
+db_url = "{{ db_url }}"

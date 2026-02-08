@@ -1,0 +1,23 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.16.0/.schema/devbox.schema.json",
+  "packages": [
+    "rustup",
+    "fermyon-spin",
+    "k6",
+    "kubectl",
+    "k3d",
+    "kubernetes-helm"
+  ],
+  "shell": {
+    "init_hook": [
+      "export RUSTUP_HOME=\"$PWD/.devbox/rustup\"",
+      "export CARGO_HOME=\"$PWD/.devbox/cargo\"",
+      "export PATH=\"$CARGO_HOME/bin:$PATH\"",
+      "if [ ! -d \"$RUSTUP_HOME/toolchains\" ]; then",
+      "  echo 'Setting up Rust toolchain...'",
+      "  rustup default stable",
+      "  rustup target add wasm32-wasip1",
+      "fi"
+    ]
+  }
+}

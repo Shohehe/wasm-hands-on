@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: db
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: db
+data:
+  init.sql: |
+    CREATE DATABASE crm_wasm;
+    CREATE DATABASE crm_containers;
+
+    \c crm_wasm
+    CREATE TABLE customers (id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL);
+    CREATE TABLE orders (id BIGSERIAL PRIMARY KEY, customer_id BIGINT NOT NULL, product TEXT NOT NULL, quantity BIGINT NOT NULL);
+
+    \c crm_containers
+    CREATE TABLE customers (id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL);
+    CREATE TABLE orders (id BIGSERIAL PRIMARY KEY, customer_id BIGINT NOT NULL, product TEXT NOT NULL, quantity BIGINT NOT NULL);
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:16-alpine
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_USER
+          value: crm
+        - name: POSTGRES_PASSWORD
+          value: crm
+        volumeMounts:
+        - name: init-sql
+          mountPath: /docker-entrypoint-initdb.d
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      volumes:
+      - name: init-sql
+        configMap:
+          name: postgres-init
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: db
+spec:
+  selector:
+    app: postgres
+  ports:
+  - port: 5432
+    targetPort: 5432

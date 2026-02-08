@@ -1,0 +1,25 @@
+spin_manifest_version = 2
+
+[application]
+name = "gateway"
+version = "0.1.0"
+
+[variables]
+customer_service_url = { default = "http://localhost:3001" }
+order_service_url = { default = "http://localhost:3002" }
+
+[[trigger.http]]
+route = "/..."
+component = "gateway"
+
+[component.gateway]
+source = "target/wasm32-wasip1/release/gateway.wasm"
+allowed_outbound_hosts = ["http://*:*"]
+
+[component.gateway.build]
+command = "cargo build --target wasm32-wasip1 --release"
+watch = ["src/**/*.rs", "Cargo.toml"]
+
+[component.gateway.variables]
+customer_service_url = "{{ customer_service_url }}"
+order_service_url = "{{ order_service_url }}"

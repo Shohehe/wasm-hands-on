@@ -1,0 +1,22 @@
+apiVersion: core.spinkube.dev/v1alpha1
+kind: SpinApp
+metadata:
+  name: gateway
+  namespace: wasm
+spec:
+  image: "myregistry:5050/spin-crm-gateway:latest"
+  replicas: 2
+  executor: containerd-shim-spin
+  enableAutoscaling: false
+  variables:
+    - name: customer_service_url
+      value: "http://customer-service.wasm.svc.cluster.local"
+    - name: order_service_url
+      value: "http://order-service.wasm.svc.cluster.local"
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 10m
+      memory: 32Mi

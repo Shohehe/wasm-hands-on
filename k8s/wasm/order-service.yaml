@@ -1,0 +1,22 @@
+apiVersion: core.spinkube.dev/v1alpha1
+kind: SpinApp
+metadata:
+  name: order-service
+  namespace: wasm
+spec:
+  image: "myregistry:5050/spin-crm-order-service:latest"
+  replicas: 2
+  executor: containerd-shim-spin
+  enableAutoscaling: false
+  variables:
+    - name: customer_service_url
+      value: "http://customer-service.wasm.svc.cluster.local"
+    - name: db_url
+      value: "postgres://crm:crm@postgres.db.svc.cluster.local:5432/crm_wasm?sslmode=disable"
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 10m
+      memory: 32Mi
