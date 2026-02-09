@@ -4,7 +4,7 @@ metadata:
   name: gateway
   namespace: containers
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: gateway
@@ -35,8 +35,8 @@ spec:
           httpGet:
             path: /healthz
             port: 8000
-          initialDelaySeconds: 5
-          periodSeconds: 5
+          initialDelaySeconds: 0
+          periodSeconds: 1
         livenessProbe:
           httpGet:
             path: /healthz

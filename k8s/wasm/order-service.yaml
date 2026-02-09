@@ -5,7 +5,7 @@ metadata:
   namespace: wasm
 spec:
   image: "myregistry:5050/spin-crm-order-service:latest"
-  replicas: 2
+  replicas: 1
   executor: containerd-shim-spin
   enableAutoscaling: false
   variables:
@@ -15,8 +15,8 @@ spec:
       value: "postgres://crm:crm@postgres.db.svc.cluster.local:5432/crm_wasm?sslmode=disable"
   resources:
     limits:
-      cpu: 100m
-      memory: 128Mi
+      cpu: 200m
+      memory: 256Mi
     requests:
       cpu: 10m
-      memory: 32Mi
+      memory: 64Mi

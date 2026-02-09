@@ -8,6 +8,10 @@ const customerListLatency = new Trend('customer_list_latency');
 const customerCreateLatency = new Trend('customer_create_latency');
 const orderCreateLatency = new Trend('order_create_latency');
 
+// Mixed scenario uses separate metrics to avoid contaminating per-scenario results
+const mixedReadLatency = new Trend('mixed_read_latency');
+const mixedWriteLatency = new Trend('mixed_write_latency');
+
 // Server-Timing breakdown metrics
 const serverConn = new Trend('server_conn_ms');
 const serverQuery = new Trend('server_query_ms');
@@ -131,8 +135,23 @@ export function interServiceScenario(data) {
 
 export function mixedScenario(data) {
   if (Math.random() < 0.7) {
-    readScenario();
+    const start = Date.now();
+    const res = http.get(`${BASE_URL}/customers`);
+    mixedReadLatency.add(Date.now() - start);
+    check(res, { 'mixed read status 200': (r) => r.status === 200 });
+    errorRate.add(res.status !== 200);
+    collectServerTiming(res);
+    sleep(0.1);
   } else {
-    writeScenario();
+    const start = Date.now();
+    const res = http.post(`${BASE_URL}/customers`, JSON.stringify({
+      name: `Customer ${Date.now()}`,
+      email: `user${Date.now()}@example.com`,
+    }), { headers: { 'Content-Type': 'application/json' } });
+    mixedWriteLatency.add(Date.now() - start);
+    check(res, { 'mixed write status 201': (r) => r.status === 201 });
+    errorRate.add(res.status !== 201);
+    collectServerTiming(res);
+    sleep(0.1);
   }
 }
