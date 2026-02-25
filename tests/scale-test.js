@@ -2,30 +2,63 @@ import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Rate, Trend } from 'k6/metrics';
 
-// Custom metrics
+// Custom metrics per VU level
 const errorRate = new Rate('errors');
 const requestLatency = new Trend('request_latency');
 const serverConn = new Trend('server_conn_ms');
 const serverQuery = new Trend('server_query_ms');
 
+// Per-VU-level latency trends
+const latency_5vu = new Trend('latency_5vu');
+const latency_10vu = new Trend('latency_10vu');
+const latency_20vu = new Trend('latency_20vu');
+const latency_50vu = new Trend('latency_50vu');
+const latency_100vu = new Trend('latency_100vu');
+
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8000';
 
-// Scalability test: ramp from 1 to 50 VUs to find throughput limits
+// Scalability test: independent constant-vus scenarios per VU level
+// This allows clear per-level performance comparison without ramping ambiguity
 export const options = {
   scenarios: {
-    scale_ramp: {
-      executor: 'ramping-vus',
-      startVUs: 1,
-      stages: [
-        { duration: '15s', target: 5 },
-        { duration: '15s', target: 10 },
-        { duration: '15s', target: 20 },
-        { duration: '15s', target: 50 },
-        { duration: '15s', target: 100 },
-        { duration: '15s', target: 0 },
-      ],
-      exec: 'scaleScenario',
-      tags: { scenario: 'scale_ramp' },
+    scale_5vu: {
+      executor: 'constant-vus',
+      vus: 5,
+      duration: '15s',
+      exec: 'scale5',
+      tags: { vu_level: '5' },
+    },
+    scale_10vu: {
+      executor: 'constant-vus',
+      vus: 10,
+      duration: '15s',
+      exec: 'scale10',
+      startTime: '18s',
+      tags: { vu_level: '10' },
+    },
+    scale_20vu: {
+      executor: 'constant-vus',
+      vus: 20,
+      duration: '15s',
+      exec: 'scale20',
+      startTime: '36s',
+      tags: { vu_level: '20' },
+    },
+    scale_50vu: {
+      executor: 'constant-vus',
+      vus: 50,
+      duration: '15s',
+      exec: 'scale50',
+      startTime: '54s',
+      tags: { vu_level: '50' },
+    },
+    scale_100vu: {
+      executor: 'constant-vus',
+      vus: 100,
+      duration: '15s',
+      exec: 'scale100',
+      startTime: '72s',
+      tags: { vu_level: '100' },
     },
   },
   thresholds: {
@@ -50,21 +83,24 @@ function collectServerTiming(res) {
   });
 }
 
-// Setup: create a customer so we have data to read
+// Setup: create a customer so we have a known ID for reads
 export function setup() {
   const res = http.post(`${BASE_URL}/customers`, JSON.stringify({
     name: 'Scale Test Customer',
     email: 'scale@example.com',
   }), { headers: { 'Content-Type': 'application/json' } });
-  return { customerId: JSON.parse(res.body).id };
+  const body = JSON.parse(res.body);
+  return { customerId: body.id };
 }
 
-export function scaleScenario() {
-  // 80% reads, 20% writes to simulate realistic load
+// Core scenario logic: 80% reads (by ID), 20% writes
+function runScale(data, latencyTrend) {
   if (Math.random() < 0.8) {
     const start = Date.now();
-    const res = http.get(`${BASE_URL}/customers`);
-    requestLatency.add(Date.now() - start);
+    const res = http.get(`${BASE_URL}/customers/${data.customerId}`);
+    const elapsed = Date.now() - start;
+    requestLatency.add(elapsed);
+    latencyTrend.add(elapsed);
     check(res, { 'scale read 200': (r) => r.status === 200 });
     errorRate.add(res.status !== 200);
     collectServerTiming(res);
@@ -74,7 +110,9 @@ export function scaleScenario() {
       name: `Scale ${Date.now()}`,
       email: `s${Date.now()}@example.com`,
     }), { headers: { 'Content-Type': 'application/json' } });
-    requestLatency.add(Date.now() - start);
+    const elapsed = Date.now() - start;
+    requestLatency.add(elapsed);
+    latencyTrend.add(elapsed);
     check(res, { 'scale write 201': (r) => r.status === 201 });
     errorRate.add(res.status !== 201);
     collectServerTiming(res);
@@ -82,13 +120,36 @@ export function scaleScenario() {
   sleep(0.05);
 }
 
+export function scale5(data) { runScale(data, latency_5vu); }
+export function scale10(data) { runScale(data, latency_10vu); }
+export function scale20(data) { runScale(data, latency_20vu); }
+export function scale50(data) { runScale(data, latency_50vu); }
+export function scale100(data) { runScale(data, latency_100vu); }
+
 export function handleSummary(data) {
   const out = {};
 
   // Text summary
   const lines = ['\n=== Scalability Test Summary ==='];
+
+  // Per-VU-level breakdown
+  const vuLevels = [5, 10, 20, 50, 100];
+  lines.push('\n--- Per VU Level ---');
+  for (const vu of vuLevels) {
+    const key = `latency_${vu}vu`;
+    const m = data.metrics[key];
+    if (m && m.values) {
+      const v = m.values;
+      lines.push(`  ${vu} VUs: avg=${v.avg.toFixed(2)} med=${v.med.toFixed(2)} p90=${v['p(90)'].toFixed(2)} p95=${v['p(95)'].toFixed(2)} max=${v.max.toFixed(2)} count=${v.count}`);
+    }
+  }
+
+  // Overall metrics
+  lines.push('\n--- Overall ---');
   const metrics = Object.entries(data.metrics).sort((a, b) => a[0].localeCompare(b[0]));
   for (const [name, m] of metrics) {
+    // Skip per-VU metrics (already shown above)
+    if (name.match(/^latency_\d+vu$/)) continue;
     if (m.type === 'trend') {
       const v = m.values;
       lines.push(`  ${name}: avg=${v.avg.toFixed(2)} med=${v.med.toFixed(2)} p90=${v['p(90)'].toFixed(2)} p95=${v['p(95)'].toFixed(2)} max=${v.max.toFixed(2)}`);
