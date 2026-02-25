@@ -4,19 +4,27 @@ import { Rate, Trend } from 'k6/metrics';
 
 // Custom metrics
 const errorRate = new Rate('errors');
-const customerListLatency = new Trend('customer_list_latency');
-const customerCreateLatency = new Trend('customer_create_latency');
-const orderCreateLatency = new Trend('order_create_latency');
 
-// Mixed scenario uses separate metrics to avoid contaminating per-scenario results
-const mixedReadLatency = new Trend('mixed_read_latency');
-const mixedWriteLatency = new Trend('mixed_write_latency');
+// Per-scenario Server-Timing breakdown metrics
+const readServerConn = new Trend('read_server_conn_ms');
+const readServerQuery = new Trend('read_server_query_ms');
+const readServerSer = new Trend('read_server_ser_ms');
+const readServerVerify = new Trend('read_server_verify_ms');
 
-// Server-Timing breakdown metrics
-const serverConn = new Trend('server_conn_ms');
-const serverQuery = new Trend('server_query_ms');
-const serverSer = new Trend('server_ser_ms');
-const serverVerify = new Trend('server_verify_ms');
+const writeServerConn = new Trend('write_server_conn_ms');
+const writeServerQuery = new Trend('write_server_query_ms');
+const writeServerSer = new Trend('write_server_ser_ms');
+const writeServerVerify = new Trend('write_server_verify_ms');
+
+const interServiceServerConn = new Trend('inter_service_server_conn_ms');
+const interServiceServerQuery = new Trend('inter_service_server_query_ms');
+const interServiceServerSer = new Trend('inter_service_server_ser_ms');
+const interServiceServerVerify = new Trend('inter_service_server_verify_ms');
+
+const mixedServerConn = new Trend('mixed_server_conn_ms');
+const mixedServerQuery = new Trend('mixed_server_query_ms');
+const mixedServerSer = new Trend('mixed_server_ser_ms');
+const mixedServerVerify = new Trend('mixed_server_verify_ms');
 
 // Configuration via env vars
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8000';
@@ -69,7 +77,7 @@ export const options = {
   },
 };
 
-function collectServerTiming(res) {
+function collectServerTiming(res, connMetric, queryMetric, serMetric, verifyMetric) {
   const header = res.headers['Server-Timing'] || res.headers['server-timing'];
   if (!header) return;
   header.split(',').forEach(part => {
@@ -78,10 +86,10 @@ function collectServerTiming(res) {
       const name = match[1];
       const dur = parseFloat(match[2]);
       switch (name) {
-        case 'conn': serverConn.add(dur); break;
-        case 'query': serverQuery.add(dur); break;
-        case 'ser': serverSer.add(dur); break;
-        case 'verify': serverVerify.add(dur); break;
+        case 'conn': connMetric.add(dur); break;
+        case 'query': queryMetric.add(dur); break;
+        case 'ser': serMetric.add(dur); break;
+        case 'verify': verifyMetric.add(dur); break;
       }
     }
   });
@@ -97,61 +105,51 @@ export function setup() {
 }
 
 export function readScenario() {
-  const start = Date.now();
   const res = http.get(`${BASE_URL}/customers`);
-  customerListLatency.add(Date.now() - start);
   check(res, { 'read status 200': (r) => r.status === 200 });
   errorRate.add(res.status !== 200);
-  collectServerTiming(res);
+  collectServerTiming(res, readServerConn, readServerQuery, readServerSer, readServerVerify);
   sleep(0.1);
 }
 
 export function writeScenario() {
-  const start = Date.now();
   const res = http.post(`${BASE_URL}/customers`, JSON.stringify({
     name: `Customer ${Date.now()}`,
     email: `user${Date.now()}@example.com`,
   }), { headers: { 'Content-Type': 'application/json' } });
-  customerCreateLatency.add(Date.now() - start);
   check(res, { 'write status 201': (r) => r.status === 201 });
   errorRate.add(res.status !== 201);
-  collectServerTiming(res);
+  collectServerTiming(res, writeServerConn, writeServerQuery, writeServerSer, writeServerVerify);
   sleep(0.1);
 }
 
 export function interServiceScenario(data) {
-  const start = Date.now();
   const res = http.post(`${BASE_URL}/orders`, JSON.stringify({
     customer_id: data.customerId,
     product: `Product ${Date.now()}`,
     quantity: Math.floor(Math.random() * 10) + 1,
   }), { headers: { 'Content-Type': 'application/json' } });
-  orderCreateLatency.add(Date.now() - start);
   check(res, { 'order status 201': (r) => r.status === 201 });
   errorRate.add(res.status !== 201);
-  collectServerTiming(res);
+  collectServerTiming(res, interServiceServerConn, interServiceServerQuery, interServiceServerSer, interServiceServerVerify);
   sleep(0.1);
 }
 
 export function mixedScenario(data) {
   if (Math.random() < 0.7) {
-    const start = Date.now();
     const res = http.get(`${BASE_URL}/customers`);
-    mixedReadLatency.add(Date.now() - start);
     check(res, { 'mixed read status 200': (r) => r.status === 200 });
     errorRate.add(res.status !== 200);
-    collectServerTiming(res);
+    collectServerTiming(res, mixedServerConn, mixedServerQuery, mixedServerSer, mixedServerVerify);
     sleep(0.1);
   } else {
-    const start = Date.now();
     const res = http.post(`${BASE_URL}/customers`, JSON.stringify({
       name: `Customer ${Date.now()}`,
       email: `user${Date.now()}@example.com`,
     }), { headers: { 'Content-Type': 'application/json' } });
-    mixedWriteLatency.add(Date.now() - start);
     check(res, { 'mixed write status 201': (r) => r.status === 201 });
     errorRate.add(res.status !== 201);
-    collectServerTiming(res);
+    collectServerTiming(res, mixedServerConn, mixedServerQuery, mixedServerSer, mixedServerVerify);
     sleep(0.1);
   }
 }

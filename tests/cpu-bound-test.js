@@ -3,7 +3,6 @@ import { check, sleep } from 'k6';
 import { Rate, Trend } from 'k6/metrics';
 
 const errorRate = new Rate('errors');
-const computeLatency = new Trend('compute_latency');
 const serverCompute = new Trend('server_compute_ms');
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8000';
@@ -35,9 +34,7 @@ function collectServerTiming(res) {
 }
 
 export function computeScenario() {
-  const start = Date.now();
   const res = http.get(`${BASE_URL}/compute?n=${N}`);
-  computeLatency.add(Date.now() - start);
   check(res, { 'compute status 200': (r) => r.status === 200 });
   errorRate.add(res.status !== 200);
   collectServerTiming(res);

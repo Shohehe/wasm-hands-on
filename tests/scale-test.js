@@ -4,7 +4,6 @@ import { Rate, Trend } from 'k6/metrics';
 
 // Custom metrics per VU level
 const errorRate = new Rate('errors');
-const requestLatency = new Trend('request_latency');
 const serverConn = new Trend('server_conn_ms');
 const serverQuery = new Trend('server_query_ms');
 
@@ -96,23 +95,17 @@ export function setup() {
 // Core scenario logic: 80% reads (by ID), 20% writes
 function runScale(data, latencyTrend) {
   if (Math.random() < 0.8) {
-    const start = Date.now();
     const res = http.get(`${BASE_URL}/customers/${data.customerId}`);
-    const elapsed = Date.now() - start;
-    requestLatency.add(elapsed);
-    latencyTrend.add(elapsed);
+    latencyTrend.add(res.timings.duration);
     check(res, { 'scale read 200': (r) => r.status === 200 });
     errorRate.add(res.status !== 200);
     collectServerTiming(res);
   } else {
-    const start = Date.now();
     const res = http.post(`${BASE_URL}/customers`, JSON.stringify({
       name: `Scale ${Date.now()}`,
       email: `s${Date.now()}@example.com`,
     }), { headers: { 'Content-Type': 'application/json' } });
-    const elapsed = Date.now() - start;
-    requestLatency.add(elapsed);
-    latencyTrend.add(elapsed);
+    latencyTrend.add(res.timings.duration);
     check(res, { 'scale write 201': (r) => r.status === 201 });
     errorRate.add(res.status !== 201);
     collectServerTiming(res);

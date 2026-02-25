@@ -3,7 +3,6 @@ import { check, sleep } from 'k6';
 import { Rate, Trend } from 'k6/metrics';
 
 const errorRate = new Rate('errors');
-const pingLatency = new Trend('ping_latency');
 const serverConn = new Trend('server_conn_ms');
 const serverQuery = new Trend('server_query_ms');
 
@@ -42,9 +41,7 @@ function collectServerTiming(res) {
 }
 
 export function pingScenario() {
-  const start = Date.now();
   const res = http.get(`${BASE_URL}/customers/ping`);
-  pingLatency.add(Date.now() - start);
   check(res, { 'ping status 200': (r) => r.status === 200 });
   errorRate.add(res.status !== 200);
   collectServerTiming(res);
