@@ -34,7 +34,7 @@ async fn main() {
         .max_connections(5)
         .connect(&database_url)
         .await
-        .unwrap();
+        .expect("Failed to connect to database");
 
     let app = Router::new()
         .route("/healthz", get(healthz))
@@ -47,8 +47,10 @@ async fn main() {
         .fallback(method_not_allowed)
         .with_state(pool);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8001").await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:8001")
+        .await
+        .expect("Failed to bind to port 8001");
+    axum::serve(listener, app).await.expect("Server error");
 }
 
 async fn healthz() -> Response {
@@ -64,11 +66,16 @@ async fn method_not_allowed() -> Response {
 
 async fn ping_db(State(pool): State<PgPool>) -> Response {
     let t_conn = Instant::now();
-    let mut conn = pool.acquire().await.unwrap();
+    let mut conn = match pool.acquire().await {
+        Ok(c) => c,
+        Err(_) => return db_error(),
+    };
     let conn_ms = t_conn.elapsed().as_secs_f64() * 1000.0;
 
     let t_query = Instant::now();
-    sqlx::query("SELECT 1").execute(&mut *conn).await.unwrap();
+    if let Err(_) = sqlx::query("SELECT 1").execute(&mut *conn).await {
+        return db_error();
+    }
     let query_ms = t_query.elapsed().as_secs_f64() * 1000.0;
 
     let body = format!(
@@ -80,19 +87,28 @@ async fn ping_db(State(pool): State<PgPool>) -> Response {
 
 async fn list_customers(State(pool): State<PgPool>) -> Response {
     let t_conn = Instant::now();
-    let mut conn = pool.acquire().await.unwrap();
+    let mut conn = match pool.acquire().await {
+        Ok(c) => c,
+        Err(_) => return db_error(),
+    };
     let conn_ms = t_conn.elapsed().as_secs_f64() * 1000.0;
 
     let t_query = Instant::now();
     let customers: Vec<Customer> =
-        sqlx::query_as::<_, Customer>("SELECT id, name, email FROM customers")
+        match sqlx::query_as::<_, Customer>("SELECT id, name, email FROM customers")
             .fetch_all(&mut *conn)
             .await
-            .unwrap();
+        {
+            Ok(v) => v,
+            Err(_) => return db_error(),
+        };
     let query_ms = t_query.elapsed().as_secs_f64() * 1000.0;
 
     let t_ser = Instant::now();
-    let body = serde_json::to_string(&customers).unwrap();
+    let body = match serde_json::to_string(&customers) {
+        Ok(s) => s,
+        Err(_) => return db_error(),
+    };
     let ser_ms = t_ser.elapsed().as_secs_f64() * 1000.0;
 
     timed_response(StatusCode::OK, &body, conn_ms, query_ms, ser_ms)
@@ -123,24 +139,40 @@ async fn create_customer(State(pool): State<PgPool>, body: Bytes) -> Response {
         }
     };
 
+    if name.len() > 255 {
+        return json_response(StatusCode::BAD_REQUEST, r#"{"error":"name must be 255 characters or less"}"#);
+    }
+    if email.len() > 255 || !email.contains('@') {
+        return json_response(StatusCode::BAD_REQUEST, r#"{"error":"invalid email format"}"#);
+    }
+
     let t_conn = Instant::now();
-    let mut conn = pool.acquire().await.unwrap();
+    let mut conn = match pool.acquire().await {
+        Ok(c) => c,
+        Err(_) => return db_error(),
+    };
     let conn_ms = t_conn.elapsed().as_secs_f64() * 1000.0;
 
     let t_query = Instant::now();
     let id: i64 =
-        sqlx::query_scalar("INSERT INTO customers (name, email) VALUES ($1, $2) RETURNING id")
+        match sqlx::query_scalar("INSERT INTO customers (name, email) VALUES ($1, $2) RETURNING id")
             .bind(&name)
             .bind(&email)
             .fetch_one(&mut *conn)
             .await
-            .unwrap();
+        {
+            Ok(v) => v,
+            Err(_) => return db_error(),
+        };
     let query_ms = t_query.elapsed().as_secs_f64() * 1000.0;
 
     let customer = Customer { id, name, email };
 
     let t_ser = Instant::now();
-    let body = serde_json::to_string(&customer).unwrap();
+    let body = match serde_json::to_string(&customer) {
+        Ok(s) => s,
+        Err(_) => return db_error(),
+    };
     let ser_ms = t_ser.elapsed().as_secs_f64() * 1000.0;
 
     timed_response(StatusCode::CREATED, &body, conn_ms, query_ms, ser_ms)
@@ -148,22 +180,31 @@ async fn create_customer(State(pool): State<PgPool>, body: Bytes) -> Response {
 
 async fn get_customer(State(pool): State<PgPool>, Path(id): Path<i64>) -> Response {
     let t_conn = Instant::now();
-    let mut conn = pool.acquire().await.unwrap();
+    let mut conn = match pool.acquire().await {
+        Ok(c) => c,
+        Err(_) => return db_error(),
+    };
     let conn_ms = t_conn.elapsed().as_secs_f64() * 1000.0;
 
     let t_query = Instant::now();
     let result =
-        sqlx::query_as::<_, Customer>("SELECT id, name, email FROM customers WHERE id = $1")
+        match sqlx::query_as::<_, Customer>("SELECT id, name, email FROM customers WHERE id = $1")
             .bind(id)
             .fetch_optional(&mut *conn)
             .await
-            .unwrap();
+        {
+            Ok(v) => v,
+            Err(_) => return db_error(),
+        };
     let query_ms = t_query.elapsed().as_secs_f64() * 1000.0;
 
     match result {
         Some(c) => {
             let t_ser = Instant::now();
-            let body = serde_json::to_string(&c).unwrap();
+            let body = match serde_json::to_string(&c) {
+                Ok(s) => s,
+                Err(_) => return db_error(),
+            };
             let ser_ms = t_ser.elapsed().as_secs_f64() * 1000.0;
             timed_response(StatusCode::OK, &body, conn_ms, query_ms, ser_ms)
         }
@@ -173,15 +214,21 @@ async fn get_customer(State(pool): State<PgPool>, Path(id): Path<i64>) -> Respon
 
 async fn delete_customer(State(pool): State<PgPool>, Path(id): Path<i64>) -> Response {
     let t_conn = Instant::now();
-    let mut conn = pool.acquire().await.unwrap();
+    let mut conn = match pool.acquire().await {
+        Ok(c) => c,
+        Err(_) => return db_error(),
+    };
     let conn_ms = t_conn.elapsed().as_secs_f64() * 1000.0;
 
     let t_query = Instant::now();
-    let result = sqlx::query("DELETE FROM customers WHERE id = $1")
+    let result = match sqlx::query("DELETE FROM customers WHERE id = $1")
         .bind(id)
         .execute(&mut *conn)
         .await
-        .unwrap();
+    {
+        Ok(v) => v,
+        Err(_) => return db_error(),
+    };
     let query_ms = t_query.elapsed().as_secs_f64() * 1000.0;
 
     if result.rows_affected() == 0 {
@@ -196,6 +243,13 @@ async fn delete_customer(State(pool): State<PgPool>, Path(id): Path<i64>) -> Res
         )
         .body(axum::body::Body::empty())
         .unwrap()
+}
+
+fn db_error() -> Response {
+    json_response(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        r#"{"error":"Database error"}"#,
+    )
 }
 
 fn json_response(status: StatusCode, body: &str) -> Response {

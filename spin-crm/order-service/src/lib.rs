@@ -98,7 +98,10 @@ async fn create_order(conn: &Connection, conn_ms: f64, body: &[u8]) -> Result<Re
     };
 
     let customer_id = match input.customer_id {
-        Some(id) => id,
+        Some(id) if id > 0 => id,
+        Some(_) => {
+            return json_response(400, r#"{"error":"customer_id must be positive"}"#)
+        }
         None => {
             return json_response(
                 400,
@@ -107,7 +110,10 @@ async fn create_order(conn: &Connection, conn_ms: f64, body: &[u8]) -> Result<Re
         }
     };
     let product = match &input.product {
-        Some(p) if !p.is_empty() => p.clone(),
+        Some(p) if !p.is_empty() && p.len() <= 255 => p.clone(),
+        Some(p) if p.len() > 255 => {
+            return json_response(400, r#"{"error":"product must be 255 characters or less"}"#)
+        }
         _ => {
             return json_response(
                 400,
@@ -116,7 +122,10 @@ async fn create_order(conn: &Connection, conn_ms: f64, body: &[u8]) -> Result<Re
         }
     };
     let quantity = match input.quantity {
-        Some(q) => q,
+        Some(q) if q > 0 => q,
+        Some(_) => {
+            return json_response(400, r#"{"error":"quantity must be positive"}"#)
+        }
         None => {
             return json_response(
                 400,

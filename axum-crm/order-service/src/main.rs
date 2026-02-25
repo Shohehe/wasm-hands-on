@@ -43,7 +43,7 @@ async fn main() {
         .max_connections(5)
         .connect(&database_url)
         .await
-        .unwrap();
+        .expect("Failed to connect to database");
 
     let state = AppState {
         pool,
@@ -59,8 +59,10 @@ async fn main() {
         .fallback(method_not_allowed)
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8002").await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:8002")
+        .await
+        .expect("Failed to bind to port 8002");
+    axum::serve(listener, app).await.expect("Server error");
 }
 
 async fn healthz() -> Response {
@@ -76,19 +78,28 @@ async fn method_not_allowed() -> Response {
 
 async fn list_orders(State(state): State<AppState>) -> Response {
     let t_conn = Instant::now();
-    let mut conn = state.pool.acquire().await.unwrap();
+    let mut conn = match state.pool.acquire().await {
+        Ok(c) => c,
+        Err(_) => return db_error(),
+    };
     let conn_ms = t_conn.elapsed().as_secs_f64() * 1000.0;
 
     let t_query = Instant::now();
     let orders: Vec<Order> =
-        sqlx::query_as::<_, Order>("SELECT id, customer_id, product, quantity FROM orders")
+        match sqlx::query_as::<_, Order>("SELECT id, customer_id, product, quantity FROM orders")
             .fetch_all(&mut *conn)
             .await
-            .unwrap();
+        {
+            Ok(v) => v,
+            Err(_) => return db_error(),
+        };
     let query_ms = t_query.elapsed().as_secs_f64() * 1000.0;
 
     let t_ser = Instant::now();
-    let body = serde_json::to_string(&orders).unwrap();
+    let body = match serde_json::to_string(&orders) {
+        Ok(s) => s,
+        Err(_) => return db_error(),
+    };
     let ser_ms = t_ser.elapsed().as_secs_f64() * 1000.0;
 
     timed_response(StatusCode::OK, &body, conn_ms, query_ms, ser_ms)
@@ -101,7 +112,13 @@ async fn create_order(State(state): State<AppState>, body: Bytes) -> Response {
     };
 
     let customer_id = match input.customer_id {
-        Some(id) => id,
+        Some(id) if id > 0 => id,
+        Some(_) => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                r#"{"error":"customer_id must be positive"}"#,
+            )
+        }
         None => {
             return json_response(
                 StatusCode::BAD_REQUEST,
@@ -110,7 +127,13 @@ async fn create_order(State(state): State<AppState>, body: Bytes) -> Response {
         }
     };
     let product = match &input.product {
-        Some(p) if !p.is_empty() => p.clone(),
+        Some(p) if !p.is_empty() && p.len() <= 255 => p.clone(),
+        Some(p) if p.len() > 255 => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                r#"{"error":"product must be 255 characters or less"}"#,
+            )
+        }
         _ => {
             return json_response(
                 StatusCode::BAD_REQUEST,
@@ -119,7 +142,13 @@ async fn create_order(State(state): State<AppState>, body: Bytes) -> Response {
         }
     };
     let quantity = match input.quantity {
-        Some(q) => q,
+        Some(q) if q > 0 => q,
+        Some(_) => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                r#"{"error":"quantity must be positive"}"#,
+            )
+        }
         None => {
             return json_response(
                 StatusCode::BAD_REQUEST,
@@ -149,11 +178,14 @@ async fn create_order(State(state): State<AppState>, body: Bytes) -> Response {
     let verify_ms = t_verify.elapsed().as_secs_f64() * 1000.0;
 
     let t_conn = Instant::now();
-    let mut conn = state.pool.acquire().await.unwrap();
+    let mut conn = match state.pool.acquire().await {
+        Ok(c) => c,
+        Err(_) => return db_error(),
+    };
     let conn_ms = t_conn.elapsed().as_secs_f64() * 1000.0;
 
     let t_query = Instant::now();
-    let id: i64 = sqlx::query_scalar(
+    let id: i64 = match sqlx::query_scalar(
         "INSERT INTO orders (customer_id, product, quantity) VALUES ($1, $2, $3) RETURNING id",
     )
     .bind(customer_id)
@@ -161,7 +193,10 @@ async fn create_order(State(state): State<AppState>, body: Bytes) -> Response {
     .bind(quantity)
     .fetch_one(&mut *conn)
     .await
-    .unwrap();
+    {
+        Ok(v) => v,
+        Err(_) => return db_error(),
+    };
     let query_ms = t_query.elapsed().as_secs_f64() * 1000.0;
 
     let order = Order {
@@ -172,7 +207,10 @@ async fn create_order(State(state): State<AppState>, body: Bytes) -> Response {
     };
 
     let t_ser = Instant::now();
-    let body = serde_json::to_string(&order).unwrap();
+    let body = match serde_json::to_string(&order) {
+        Ok(s) => s,
+        Err(_) => return db_error(),
+    };
     let ser_ms = t_ser.elapsed().as_secs_f64() * 1000.0;
 
     Response::builder()
@@ -191,28 +229,44 @@ async fn create_order(State(state): State<AppState>, body: Bytes) -> Response {
 
 async fn get_order(State(state): State<AppState>, Path(id): Path<i64>) -> Response {
     let t_conn = Instant::now();
-    let mut conn = state.pool.acquire().await.unwrap();
+    let mut conn = match state.pool.acquire().await {
+        Ok(c) => c,
+        Err(_) => return db_error(),
+    };
     let conn_ms = t_conn.elapsed().as_secs_f64() * 1000.0;
 
     let t_query = Instant::now();
-    let result = sqlx::query_as::<_, Order>(
+    let result = match sqlx::query_as::<_, Order>(
         "SELECT id, customer_id, product, quantity FROM orders WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(&mut *conn)
     .await
-    .unwrap();
+    {
+        Ok(v) => v,
+        Err(_) => return db_error(),
+    };
     let query_ms = t_query.elapsed().as_secs_f64() * 1000.0;
 
     match result {
         Some(o) => {
             let t_ser = Instant::now();
-            let body = serde_json::to_string(&o).unwrap();
+            let body = match serde_json::to_string(&o) {
+                Ok(s) => s,
+                Err(_) => return db_error(),
+            };
             let ser_ms = t_ser.elapsed().as_secs_f64() * 1000.0;
             timed_response(StatusCode::OK, &body, conn_ms, query_ms, ser_ms)
         }
         None => json_response(StatusCode::NOT_FOUND, r#"{"error":"Order not found"}"#),
     }
+}
+
+fn db_error() -> Response {
+    json_response(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        r#"{"error":"Database error"}"#,
+    )
 }
 
 fn json_response(status: StatusCode, body: &str) -> Response {

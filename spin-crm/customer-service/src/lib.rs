@@ -105,6 +105,13 @@ fn create_customer(conn: &Connection, conn_ms: f64, body: &[u8]) -> Result<Respo
         _ => return json_response(400, r#"{"error":"name and email are required"}"#),
     };
 
+    if name.len() > 255 {
+        return json_response(400, r#"{"error":"name must be 255 characters or less"}"#);
+    }
+    if email.len() > 255 || !email.contains('@') {
+        return json_response(400, r#"{"error":"invalid email format"}"#);
+    }
+
     let t_query = Instant::now();
     let rowset = conn.query(
         "INSERT INTO customers (name, email) VALUES ($1, $2) RETURNING id, name, email",

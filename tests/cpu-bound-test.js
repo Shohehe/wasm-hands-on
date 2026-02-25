@@ -43,3 +43,25 @@ export function computeScenario() {
   collectServerTiming(res);
   sleep(0.1);
 }
+
+export function handleSummary(data) {
+  const out = {};
+  const lines = ['\n=== CPU Bound Test Summary ==='];
+  const metrics = Object.entries(data.metrics).sort((a, b) => a[0].localeCompare(b[0]));
+  for (const [name, m] of metrics) {
+    if (m.type === 'trend') {
+      const v = m.values;
+      lines.push(`  ${name}: avg=${v.avg.toFixed(2)} med=${v.med.toFixed(2)} p90=${v['p(90)'].toFixed(2)} p95=${v['p(95)'].toFixed(2)} max=${v.max.toFixed(2)}`);
+    } else if (m.type === 'rate') {
+      lines.push(`  ${name}: ${(m.values.rate * 100).toFixed(1)}%`);
+    } else if (m.type === 'counter') {
+      lines.push(`  ${name}: ${m.values.count} (${m.values.rate.toFixed(1)}/s)`);
+    }
+  }
+  lines.push('==============================\n');
+  out['stdout'] = lines.join('\n');
+  if (__ENV.SUMMARY_JSON) {
+    out[__ENV.SUMMARY_JSON] = JSON.stringify(data, null, 2);
+  }
+  return out;
+}

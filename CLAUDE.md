@@ -81,3 +81,24 @@ wasm-hands-on/
 | GET /customers/{id} | 顧客取得 | あり |
 | DELETE /customers/{id} | 顧客削除 | あり |
 | POST /orders | 注文作成（顧客存在チェック） | あり |
+
+## バリデーション
+
+- Customer: name (必須, 1-255文字), email (必須, '@' 含む, 1-255文字)
+- Order: customer_id (必須, 正数), product (必須, 1-255文字), quantity (必須, 正数)
+
+## テスト
+
+```bash
+# 全ベンチマーク一括（結果は results/<timestamp>/ に保存）
+devbox run -- ./scripts/bench-all.sh
+
+# 個別テスト
+devbox run -- k6 run -e BASE_URL=http://localhost:9090 tests/load-test.js      # CRUD
+devbox run -- k6 run -e BASE_URL=http://localhost:9090 tests/cpu-bound-test.js  # CPU
+devbox run -- k6 run -e BASE_URL=http://localhost:9090 tests/scale-test.js      # スケール
+devbox run -- k6 run -e BASE_URL=http://localhost:9090 tests/error-test.js      # エラーパス
+devbox run -- bash tests/coldstart-test.sh wasm gateway 5                       # コールドスタート
+devbox run -- bash tests/availability-test.sh wasm gateway 5                    # 可用性
+devbox run -- bash tests/resource-test.sh                                       # リソース比較
+```

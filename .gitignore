@@ -14,5 +14,8 @@ Cargo.lock
 # k6
 k6-results/
 
+# Benchmark results
+results/
+
 # Devbox
 .devbox/
