@@ -196,17 +196,28 @@ SUM=0
 MIN=999999
 MAX=0
 for v in "${RESULTS[@]}"; do
+  if [[ "${v}" == "timeout" ]]; then
+    log "WARNING: Timeout detected, skipping in statistics"
+    continue
+  fi
   SUM=$((SUM + v))
   [[ "${v}" -lt "${MIN}" ]] && MIN=${v}
   [[ "${v}" -gt "${MAX}" ]] && MAX=${v}
 done
-AVG=$((SUM / ${#RESULTS[@]}))
 
-echo ""
-echo "  Average: ${AVG}ms"
-echo "  Min:     ${MIN}ms"
-echo "  Max:     ${MAX}ms"
-echo "  Count:   ${#RESULTS[@]}"
+COUNT=0
+for v in "${RESULTS[@]}"; do
+  [[ "${v}" != "timeout" ]] && COUNT=$((COUNT + 1))
+done
+
+if [[ "${COUNT}" -gt 0 ]]; then
+  AVG=$((SUM / COUNT))
+  echo ""
+  echo "  Average: ${AVG}ms"
+  echo "  Min:     ${MIN}ms"
+  echo "  Max:     ${MAX}ms"
+  echo "  Count:   ${COUNT}"
+fi
 echo ""
 echo "============================================================"
 
